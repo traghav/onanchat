@@ -8,8 +8,8 @@ import argparse
 import torch
 from nanochat.common import compute_init, autodetect_device_type
 from contextlib import nullcontext
-from nanochat.engine import Engine
 from nanochat.checkpoint_manager import load_model
+from nanochat.directional_chat_engine import create_chat_engine
 
 parser = argparse.ArgumentParser(description='Chat with the model')
 parser.add_argument('-i', '--source', type=str, default="sft", help="Source of the model: sft|mid|rl")
@@ -30,21 +30,23 @@ ptdtype = torch.float32 if args.dtype == 'float32' else torch.bfloat16
 autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype) if device_type == "cuda" else nullcontext()
 model, tokenizer, meta = load_model(args.source, device, phase="eval", model_tag=args.model_tag, step=args.step)
 
-# Special tokens for the chat state machine
-bos = tokenizer.get_bos_token_id()
-user_start, user_end = tokenizer.encode_special("<|user_start|>"), tokenizer.encode_special("<|user_end|>")
-assistant_start, assistant_end = tokenizer.encode_special("<|assistant_start|>"), tokenizer.encode_special("<|assistant_end|>")
+# Create direction-aware chat engine
+chat_engine = create_chat_engine(model, tokenizer, meta)
 
-# Create Engine for efficient generation
-engine = Engine(model, tokenizer)
-
-print("\nNanoChat Interactive Mode")
+# Print welcome message with direction info
+direction = meta.get('direction', 'forward')
+print(f"\nNanoChat Interactive Mode - Model Direction: {direction}")
 print("-" * 50)
-print("Type 'quit' or 'exit' to end the conversation")
-print("Type 'clear' to start a new conversation")
+print("Commands:")
+print("  /quit, /exit - End conversation")
+print("  /clear - Start new conversation")
+if chat_engine.can_toggle_direction():
+    print("  /forward - Switch to forward generation")
+    print("  /backward - Switch to backward generation")
 print("-" * 50)
 
-conversation_tokens = [bos]
+# Track current direction for display indicator (bidirectional models)
+current_direction = 'forward'
 
 while True:
 
@@ -54,51 +56,58 @@ while True:
     else:
         # Get the prompt interactively from the console
         try:
-            user_input = input("\nUser: ").strip()
+            # Direction indicator
+            arrow = '→' if current_direction == 'forward' else '←'
+            user_input = input(f"\n{arrow} You: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nGoodbye!")
             break
 
-    # Handle special commands
-    if user_input.lower() in ['quit', 'exit']:
+    # Handle commands
+    if user_input in ['/quit', '/exit', 'quit', 'exit']:
         print("Goodbye!")
         break
 
-    if user_input.lower() == 'clear':
-        conversation_tokens = [bos]
+    elif user_input in ['/clear', 'clear']:
+        chat_engine.clear()
         print("Conversation cleared.")
         continue
 
+    elif user_input == '/forward':
+        if chat_engine.can_toggle_direction():
+            current_direction = 'forward'
+            chat_engine.set_direction('forward')
+            print("Direction: forward →")
+        else:
+            print(f"Error: Direction toggle only available for bidirectional models.")
+            print(f"Current model direction: {direction}")
+        continue
+
+    elif user_input == '/backward':
+        if chat_engine.can_toggle_direction():
+            current_direction = 'backward'
+            chat_engine.set_direction('backward')
+            print("Direction: backward ←")
+        else:
+            print(f"Error: Direction toggle only available for bidirectional models.")
+            print(f"Current model direction: {direction}")
+        continue
+
+    # Handle empty input
     if not user_input:
         continue
 
-    # Add User message to the conversation
-    conversation_tokens.append(user_start)
-    conversation_tokens.extend(tokenizer.encode(user_input))
-    conversation_tokens.append(user_end)
+    # Add user message and generate response
+    chat_engine.add_user_message(user_input)
 
-    # Kick off the assistant
-    conversation_tokens.append(assistant_start)
-    generate_kwargs = {
-        "num_samples": 1,
-        "max_tokens": 256,
-        "temperature": args.temperature,
-        "top_k": args.top_k,
-    }
-    response_tokens = []
-    print("\nAssistant: ", end="", flush=True)
     with autocast_ctx:
-        for token_column, token_masks in engine.generate(conversation_tokens, **generate_kwargs):
-            token = token_column[0] # pop the batch dimension (num_samples=1)
-            response_tokens.append(token)
-            token_text = tokenizer.decode([token])
-            print(token_text, end="", flush=True)
-    print()
-    # we have to ensure that the assistant end token is the last token
-    # so even if generation ends due to max tokens, we have to append it to the end
-    if response_tokens[-1] != assistant_end:
-        response_tokens.append(assistant_end)
-    conversation_tokens.extend(response_tokens)
+        response = chat_engine.generate_response(
+            temperature=args.temperature,
+            top_k=args.top_k,
+            max_tokens=2048
+        )
+
+    print(f"Assistant: {response}")
 
     # In the prompt mode, we only want a single response and exit
     if args.prompt:
