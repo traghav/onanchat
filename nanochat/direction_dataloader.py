@@ -58,7 +58,7 @@ def direction_aware_dataloader(B, T, split, direction="forward",
                     yield batch[i:i+tokenizer_batch_size]
     batches = document_batches()
 
-    batch_index = 0
+    output_batch_index = 0  # Track output batches for bidirectional alternation
     while True:
         # Accumulate enough tokens for one iteration
         while len(token_buffer) < needed_tokens:
@@ -66,7 +66,6 @@ def direction_aware_dataloader(B, T, split, direction="forward",
             token_lists = tokenizer.encode(doc_batch, prepend=bos_token, num_threads=tokenizer_threads)
             for tokens in token_lists:
                 token_buffer.extend(tokens)
-            batch_index += 1
 
         # Move tokens from deque into scratch buffer
         tokens = [token_buffer.popleft() for _ in range(needed_tokens)]
@@ -81,13 +80,15 @@ def direction_aware_dataloader(B, T, split, direction="forward",
         elif direction == "bidirectional":
             # Add direction marker and reverse if needed
             # Even batches: forward, Odd batches: backward
-            is_backward = (batch_index % 2) == 1
+            is_backward = (output_batch_index % 2) == 1
             if is_backward:
-                # Insert backward token after BOS, then reverse
-                tokens = [tokens[0], backward_token] + reverse_tokens(tokens[1:], keep_bos=False)
+                # Insert backward token after BOS, then reverse remaining
+                # Remove last token to maintain total count
+                tokens = [tokens[0], backward_token] + reverse_tokens(tokens[1:-1], keep_bos=False)
             else:
                 # Insert forward token after BOS
-                tokens = [tokens[0], forward_token] + tokens[1:]
+                # Remove last token to maintain total count
+                tokens = [tokens[0], forward_token] + tokens[1:-1]
 
         # Create tensors
         scratch = torch.tensor(tokens, dtype=torch.int64, pin_memory=(device == "cuda"))
@@ -96,4 +97,5 @@ def direction_aware_dataloader(B, T, split, direction="forward",
         inputs = inputs_cpu.view(B, T).to(device=device, dtype=torch.int32, non_blocking=True)
         targets = targets_cpu.view(B, T).to(device=device, dtype=torch.int64, non_blocking=True)
 
+        output_batch_index += 1
         yield inputs, targets

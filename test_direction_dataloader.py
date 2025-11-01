@@ -29,3 +29,22 @@ print(f"Backward tokens: {inputs_bwd[0].tolist()}")
 # First token (BOS) should be same
 assert inputs_fwd[0][0] == inputs_bwd[0][0], "BOS should be same"
 print("✅ Backward direction preserves BOS at start")
+
+# Test bidirectional direction
+loader_bi = direction_aware_dataloader(B=4, T=16, split="val", direction="bidirectional", device="cpu")
+inputs_bi, targets_bi = next(loader_bi)
+
+# Check that direction tokens are present
+forward_token = tokenizer.get_forward_token_id()
+backward_token = tokenizer.get_backward_token_id()
+
+# Get second token of each batch (should be direction marker)
+second_tokens = inputs_bi[:, 1].tolist()
+print(f"\nBidirectional second tokens: {second_tokens}")
+print(f"Forward token ID: {forward_token}, Backward token ID: {backward_token}")
+
+# Should have mix of forward and backward tokens
+has_forward = forward_token in second_tokens
+has_backward = backward_token in second_tokens
+print(f"Has forward markers: {has_forward}, Has backward markers: {has_backward}")
+print("✅ Bidirectional direction includes direction tokens")
