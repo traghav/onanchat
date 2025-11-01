@@ -65,6 +65,17 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-rl
 
 # Init model and tokenizer
 model, tokenizer, meta = load_model(source, device, phase="eval")
+
+# Auto-detect direction from checkpoint
+from nanochat.common import validate_direction, reverse_tokens
+direction = meta.get("direction", "forward")
+validate_direction(direction)
+print0(f"Detected direction from checkpoint: {direction}")
+
+if direction == "bidirectional":
+    forward_token = tokenizer.get_forward_token_id()
+    backward_token = tokenizer.get_backward_token_id()
+
 engine = Engine(model, tokenizer) # for sampling rollouts
 
 # -----------------------------------------------------------------------------
@@ -79,6 +90,8 @@ print0(f"Calculated number of steps: {num_steps}")
 def get_batch():
     assistant_end = tokenizer.encode_special("<|assistant_end|>") # ok to use this token, it's only for padding and isn't used in the loss.
     rank_indices = range(ddp_rank, len(train_task), ddp_world_size) # each rank is responsible for different examples in the training data
+    batch_idx = 0  # For bidirectional alternation
+
     for example_idx in itertools.cycle(rank_indices):
 
         # First get the full conversation of both user and assistant messages
@@ -87,6 +100,19 @@ def get_batch():
         # Tokenize the conversation, deleting the last Assistant message and priming the Assistant for a completion instead
         # (i.e. keep the <|assistant_start|>, but delete everything after it)
         tokens = tokenizer.render_for_completion(conversation)
+
+        # Apply direction transformation to prompt
+        if direction == "forward":
+            pass  # No change
+        elif direction == "backward":
+            tokens = reverse_tokens(tokens, keep_bos=True)
+        elif direction == "bidirectional":
+            is_backward = (batch_idx % 2) == 1
+            if is_backward:
+                tokens = [tokens[0], backward_token] + reverse_tokens(tokens[1:], keep_bos=False)
+            else:
+                tokens = [tokens[0], forward_token] + tokens[1:]
+
         prefix_length = len(tokens)
 
         # Generate num_samples samples using batched generation, use loop to avoid OOMs
@@ -113,11 +139,20 @@ def get_batch():
         for sample_tokens in generated_token_sequences:
             # Get just the generated tokens (after the prompt)
             generated_tokens = sample_tokens[prefix_length:]
+
+            # For backward/bidirectional, need to reverse output back
+            if direction == "backward":
+                generated_tokens = list(reversed(generated_tokens))
+            elif direction == "bidirectional" and is_backward:
+                generated_tokens = list(reversed(generated_tokens))
+
             # Decode the generated response
             generated_text = tokenizer.decode(generated_tokens)
             # Calculate the reward
             reward = train_task.reward(conversation, generated_text)
             rewards.append(reward)
+
+        batch_idx += 1
 
         # Pad the sequences so that their lengths (in time) match
         max_length = max(len(seq) for seq in generated_token_sequences)
