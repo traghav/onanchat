@@ -22,6 +22,9 @@ SPECIAL_TOKENS = [
     "<|python_end|>",
     "<|output_start|>", # python REPL outputs back to assistant
     "<|output_end|>",
+    # direction tokens for bidirectional language modeling research
+    "<|forward|>", # marks forward direction in bidirectional models
+    "<|backward|>", # marks backward direction in bidirectional models
 ]
 
 # NOTE: this split pattern deviates from GPT-4 in that we use \p{N}{1,2} instead of \p{N}{1,3}
@@ -125,6 +128,14 @@ class HuggingFaceTokenizer:
         bos = self.encode_special("<|bos|>")
         return bos
 
+    def get_forward_token_id(self):
+        """Get token ID for <|forward|> direction marker."""
+        return self.encode_special("<|forward|>")
+
+    def get_backward_token_id(self):
+        """Get token ID for <|backward|> direction marker."""
+        return self.encode_special("<|backward|>")
+
     def encode(self, text, *args, **kwargs):
         if isinstance(text, str):
             return self._encode_one(text, *args, **kwargs)
@@ -213,6 +224,14 @@ class RustBPETokenizer:
 
     def get_bos_token_id(self):
         return self.bos_token_id
+
+    def get_forward_token_id(self):
+        """Get token ID for <|forward|> direction marker."""
+        return self.encode_special("<|forward|>")
+
+    def get_backward_token_id(self):
+        """Get token ID for <|backward|> direction marker."""
+        return self.encode_special("<|backward|>")
 
     def encode(self, text, prepend=None, append=None, num_threads=8):
         # text can be either a string or a list of strings
