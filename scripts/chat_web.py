@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from contextlib import nullcontext
 from nanochat.common import compute_init, autodetect_device_type
 from nanochat.checkpoint_manager import load_model
-from nanochat.engine import Engine
+from nanochat.directional_chat_engine import create_chat_engine
 
 # Abuse prevention limits
 MAX_MESSAGES_PER_REQUEST = 500
@@ -91,9 +91,10 @@ class Worker:
     """A worker with a model loaded on a specific GPU."""
     gpu_id: int
     device: torch.device
-    engine: Engine
+    chat_engine: object  # DirectionalChatEngine instance
     tokenizer: object
     autocast_ctx: torch.amp.autocast
+    meta: dict  # Model metadata (includes direction)
 
 class WorkerPool:
     """Pool of workers, each with a model replica on a different GPU."""
@@ -123,21 +124,24 @@ class WorkerPool:
                 device = torch.device(device_type) # e.g. cpu|mps
                 print(f"Loading model on {device_type}...")
 
-            model, tokenizer, _ = load_model(source, device, phase="eval", model_tag=model_tag, step=step)
-            engine = Engine(model, tokenizer)
+            model, tokenizer, meta = load_model(source, device, phase="eval", model_tag=model_tag, step=step)
+            chat_engine = create_chat_engine(model, tokenizer, meta)
             autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype) if device_type == "cuda" else nullcontext()
 
             worker = Worker(
                 gpu_id=gpu_id,
                 device=device,
-                engine=engine,
+                chat_engine=chat_engine,
                 tokenizer=tokenizer,
-                autocast_ctx=autocast_ctx
+                autocast_ctx=autocast_ctx,
+                meta=meta
             )
             self.workers.append(worker)
             await self.available_workers.put(worker)
 
         print(f"All {self.num_gpus} workers initialized!")
+        direction = meta.get('direction', 'forward')
+        print(f"Model direction: {direction}")
 
     async def acquire_worker(self) -> Worker:
         """Get an available worker from the pool."""
@@ -280,7 +284,7 @@ async def generate_stream(
     last_clean_text = ""
 
     with worker.autocast_ctx:
-        for token_column, token_masks in worker.engine.generate(
+        for token_column, token_masks in worker.chat_engine.engine.generate(
             tokens,
             num_samples=1,
             max_tokens=max_new_tokens,
