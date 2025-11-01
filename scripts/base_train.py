@@ -37,6 +37,7 @@ device_type = "" # cuda|cpu|mps (empty => autodetect good device type default, i
 # Model architecture
 depth = 20 # the depth of the Transformer model to train, rest of the kwargs are derived
 max_seq_len = 2048 # max context length
+direction = "forward" # forward|backward|bidirectional - direction for language modeling
 # Training horizon. Only one of these 3 will be used, in this order of precedence.
 num_iterations = -1 # explicit number of steps of the optimization (-1 = disable)
 target_flops = -1.0 # calculate num_iterations to reach target_flops. Useful for scaling laws experiments (-1 = disable)
@@ -146,8 +147,12 @@ adamw_optimizer, muon_optimizer = optimizers
 # Initialize the DataLoaders for train/val
 base_dir = get_base_dir()
 tokens_dir = os.path.join(base_dir, "tokenized_data")
-train_loader = tokenizing_distributed_data_loader(device_batch_size, max_seq_len, split="train", device=device)
-build_val_loader = lambda: tokenizing_distributed_data_loader(device_batch_size, max_seq_len, split="val", device=device)
+from nanochat.direction_dataloader import direction_aware_dataloader
+from nanochat.common import validate_direction
+validate_direction(direction)
+print0(f"Using direction: {direction}")
+train_loader = direction_aware_dataloader(device_batch_size, max_seq_len, split="train", direction=direction, device=device)
+build_val_loader = lambda: direction_aware_dataloader(device_batch_size, max_seq_len, split="val", direction=direction, device=device)
 x, y = next(train_loader) # kick off load of the very first batch of data
 
 # -----------------------------------------------------------------------------
@@ -239,7 +244,11 @@ for step in range(num_iterations + 1):
 
     # save checkpoint at the end of the run (only on master process)
     if master_process and last_step:
-        output_dirname = model_tag if model_tag else f"d{depth}" # e.g. d12
+        if model_tag:
+            output_dirname = model_tag
+        else:
+            direction_suffix = f"_{direction}" if direction != "forward" else ""
+            output_dirname = f"d{depth}{direction_suffix}"
         checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
         save_checkpoint(
             checkpoint_dir,
@@ -248,6 +257,7 @@ for step in range(num_iterations + 1):
             [opt.state_dict() for opt in optimizers], # TODO: make sure saving across ranks is done correctly
             {
                 "step": step,
+                "direction": direction,
                 "val_bpb": val_bpb, # loss at last step
                 "model_config": model_config_kwargs,
                 "user_config": user_config, # inputs to the training script
