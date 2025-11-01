@@ -74,6 +74,18 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-sf
 
 # Load the model and tokenizer
 model, tokenizer, meta = load_model(source, device, phase="train", model_tag=model_tag, step=step)
+
+# Auto-detect direction from checkpoint
+from nanochat.common import validate_direction, reverse_tokens
+direction = meta.get("direction", "forward")
+validate_direction(direction)
+print0(f"Detected direction from checkpoint: {direction}")
+
+# For bidirectional, get direction tokens
+if direction == "bidirectional":
+    forward_token = tokenizer.get_forward_token_id()
+    backward_token = tokenizer.get_backward_token_id()
+
 orig_model = model # original, uncompiled model
 # model = torch.compile(model, dynamic=True) # doesn't work super well because of variable lengths of inputs
 engine = Engine(model, tokenizer) # will be used for inline model evaluation only
@@ -118,11 +130,31 @@ def sft_data_generator(dataset, batch_size):
         return inputs, targets
     # iterates over the dataset in epochs, tokenizes
     batch = []
+    example_idx = 0  # Track for bidirectional alternation
     while True:
         for i in range(ddp_rank, len(dataset), ddp_world_size):
             doc = dataset[i]
             ids, mask = tokenizer.render_conversation(doc)
+
+            # Apply direction transformation
+            if direction == "forward":
+                pass  # No change
+            elif direction == "backward":
+                ids = reverse_tokens(ids, keep_bos=True)
+                # Mask stays same length, just reversed
+                mask = [mask[0]] + list(reversed(mask[1:]))
+            elif direction == "bidirectional":
+                is_backward = (example_idx % 2) == 1
+                if is_backward:
+                    ids = [ids[0], backward_token] + reverse_tokens(ids[1:], keep_bos=False)
+                    mask = [mask[0], 0] + list(reversed(mask[1:]))  # 0 for direction token
+                else:
+                    ids = [ids[0], forward_token] + ids[1:]
+                    mask = [mask[0], 0] + mask[1:]
+
             batch.append((ids, mask))
+            example_idx += 1
+
             if len(batch) == batch_size:
                 yield collate_and_yield(batch)
                 batch = []
