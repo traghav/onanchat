@@ -81,6 +81,22 @@ get_max_memory = torch.cuda.max_memory_allocated if device_type == "cuda" else l
 use_dummy_wandb = run == "dummy" or not master_process
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat", name=run, config=user_config)
 
+# Research logging init (optional - requires h5py)
+research_logger = None
+if master_process and run != "dummy":
+    try:
+        from nanochat.research_logger import ResearchLogger
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        direction_suffix = f"_{direction}" if direction != "forward" else ""
+        experiment_id = f"{timestamp}_d{depth}{direction_suffix}"
+        base_dir = get_base_dir()
+        experiment_dir = os.path.join(base_dir, "experiments", experiment_id)
+        research_logger = ResearchLogger(experiment_dir, phase="base_training")
+        print0(f"Research logging to: {experiment_dir}")
+    except ImportError:
+        print0("Warning: h5py not installed, skipping research logging")
+
 # Tokenizer will be useful for evaluation, also we need the vocab size
 tokenizer = get_tokenizer()
 token_bytes = get_token_bytes(device=device)
@@ -313,6 +329,14 @@ while True:
         with autocast_ctx:
             loss = model(x, y)
         train_loss = loss.detach() # for logging
+
+        # Research logging (only log occasionally to save space)
+        if research_logger and step % 10 == 0 and micro_step == 0:
+            research_logger.log_step(step, {
+                'loss': train_loss.item(),
+                'learning_rate': lrm * matrix_lr,
+            })
+
         loss = loss / grad_accum_steps # each .backward() is a grad sum => normalize loss here
         loss.backward()
         x, y, dataloader_state_dict = next(train_loader) # prefetch the next batch while the GPU is busy with forward/backward
@@ -401,4 +425,6 @@ get_report().log(section="Base model training", data=[
 
 # cleanup
 wandb_run.finish() # wandb run finish
+if research_logger:
+    research_logger.close()
 compute_cleanup()
