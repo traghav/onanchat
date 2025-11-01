@@ -536,3 +536,31 @@ class BidirectionalChatEngine(DirectionalChatEngine):
         self.conversation_tokens = [self.tokenizer.get_bos_token_id()]
         self.turn_directions = []
         self.current_direction = 'forward'
+
+
+def create_chat_engine(model, tokenizer, meta):
+    """
+    Create appropriate chat engine based on model direction.
+
+    Args:
+        model: The language model
+        tokenizer: Tokenizer instance
+        meta: Metadata dict from checkpoint (contains 'direction' key)
+
+    Returns:
+        DirectionalChatEngine instance (Forward/Backward/Bidirectional)
+    """
+    direction = meta.get('direction', 'forward')
+
+    # Validate and default
+    if direction not in ['forward', 'backward', 'bidirectional']:
+        print(f"Warning: Unknown direction '{direction}', defaulting to forward")
+        direction = 'forward'
+
+    # Instantiate appropriate engine
+    if direction == 'forward':
+        return ForwardChatEngine(model, tokenizer, direction)
+    elif direction == 'backward':
+        return BackwardChatEngine(model, tokenizer, direction)
+    elif direction == 'bidirectional':
+        return BidirectionalChatEngine(model, tokenizer, direction)
