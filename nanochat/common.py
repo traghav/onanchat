@@ -188,3 +188,38 @@ class DummyWandb:
         pass
     def finish(self):
         pass
+
+# -----------------------------------------------------------------------------
+# Direction-aware language modeling helpers
+
+def validate_direction(direction):
+    """Validate direction parameter.
+
+    Args:
+        direction: One of "forward", "backward", "bidirectional"
+
+    Raises:
+        ValueError: If direction is invalid
+
+    Returns:
+        direction: The validated direction string
+    """
+    valid = ["forward", "backward", "bidirectional"]
+    if direction not in valid:
+        raise ValueError(f"Invalid direction '{direction}'. Must be one of: {valid}")
+    return direction
+
+def reverse_tokens(tokens, keep_bos=True):
+    """Reverse token sequence, optionally keeping BOS at start.
+
+    Args:
+        tokens: List or tensor of token IDs
+        keep_bos: If True, keep first token (BOS) at position 0
+
+    Returns:
+        Reversed token sequence (same type as input)
+    """
+    if keep_bos and len(tokens) > 1:
+        return [tokens[0]] + list(reversed(tokens[1:]))
+    else:
+        return list(reversed(tokens))
