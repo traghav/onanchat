@@ -105,20 +105,29 @@ class ForwardChatEngine(DirectionalChatEngine):
         # Build prompt with assistant_start
         prompt = self.conversation_tokens + [assistant_start]
 
-        # Generate
-        generated = self.engine.generate(
+        # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
+        response_tokens = []
+        for token_column, token_masks in self.engine.generate(
             prompt,
+            num_samples=1,
             max_tokens=max_tokens,
             temperature=temperature,
             top_k=top_k
-        )
+        ):
+            # Extract token from batch dimension (num_samples=1, so take first)
+            tok = token_column[0]
 
-        # Extract response tokens (everything after prompt until assistant_end)
-        response_tokens = []
-        for tok in generated[len(prompt):]:
+            # Stop at assistant_end token
             if tok == assistant_end:
                 break
+
             response_tokens.append(tok)
+
+        # Handle empty response case
+        if not response_tokens:
+            # Return empty string with warning marker
+            self.conversation_tokens.extend([assistant_start, assistant_end])
+            return ""
 
         # Add to conversation
         self.conversation_tokens.extend([assistant_start] + response_tokens + [assistant_end])
@@ -143,9 +152,16 @@ class ForwardChatEngine(DirectionalChatEngine):
                 # Extract user message
                 i += 1
                 msg_tokens = []
+                start_pos = i  # Track start for infinite loop detection
                 while i < len(self.conversation_tokens) and self.conversation_tokens[i] != user_end:
                     msg_tokens.append(self.conversation_tokens[i])
                     i += 1
+                # Check if we reached end without finding user_end
+                if i >= len(self.conversation_tokens):
+                    raise ValueError(
+                        f"Malformed conversation: user_start at position {start_pos-1} "
+                        f"has no matching user_end token"
+                    )
                 messages.append({"role": "user", "content": self.tokenizer.decode(msg_tokens)})
                 i += 1  # Skip user_end
 
@@ -153,9 +169,16 @@ class ForwardChatEngine(DirectionalChatEngine):
                 # Extract assistant message
                 i += 1
                 msg_tokens = []
+                start_pos = i  # Track start for infinite loop detection
                 while i < len(self.conversation_tokens) and self.conversation_tokens[i] != assistant_end:
                     msg_tokens.append(self.conversation_tokens[i])
                     i += 1
+                # Check if we reached end without finding assistant_end
+                if i >= len(self.conversation_tokens):
+                    raise ValueError(
+                        f"Malformed conversation: assistant_start at position {start_pos-1} "
+                        f"has no matching assistant_end token"
+                    )
                 messages.append({"role": "assistant", "content": self.tokenizer.decode(msg_tokens)})
                 i += 1  # Skip assistant_end
             else:
