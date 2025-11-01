@@ -67,6 +67,13 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-mi
 
 # Load the model and tokenizer
 model, tokenizer, meta = load_model("base", device, phase="train", model_tag=model_tag, step=step)
+
+# Auto-detect direction from checkpoint
+from nanochat.common import validate_direction
+direction = meta.get("direction", "forward")  # Default to forward for old checkpoints
+validate_direction(direction)
+print0(f"Detected direction from checkpoint: {direction}")
+
 pretrain_batch_size = meta.get("device_batch_size", None)
 if pretrain_batch_size is not None and device_batch_size > pretrain_batch_size:
     print0(f"FOOTGUN WARNING: base model training used device_batch_size {pretrain_batch_size}, did you pass in a good --device_batch_size to this script?")
@@ -126,11 +133,34 @@ def mid_data_generator(split):
     scratch = torch.empty(needed_tokens, dtype=torch.int64, pin_memory=(device_type == "cuda"))
     cursor = ddp_rank # increments by ddp_world_size each time, so each rank processes unique documents
     it = 0 # iteration counter
+
+    # Get direction tokens for bidirectional
+    from nanochat.common import reverse_tokens
+    if direction == "bidirectional":
+        forward_token = tokenizer.get_forward_token_id()
+        backward_token = tokenizer.get_backward_token_id()
+
     while True:
         # Accumulate enough tokens for one iteration before yielding
         while len(token_buffer) < needed_tokens:
             conversation = dataset[cursor]
             ids, _ = tokenizer.render_conversation(conversation)
+
+            # Apply direction transformation
+            if direction == "forward":
+                # No change
+                pass
+            elif direction == "backward":
+                # Reverse conversation tokens (keep BOS at start)
+                ids = reverse_tokens(ids, keep_bos=True)
+            elif direction == "bidirectional":
+                # Alternate forward/backward with markers
+                is_backward = (it % 2) == 1
+                if is_backward:
+                    ids = [ids[0], backward_token] + reverse_tokens(ids[1:], keep_bos=False)
+                else:
+                    ids = [ids[0], forward_token] + ids[1:]
+
             token_buffer.extend(ids)
             cursor += ddp_world_size
             if cursor >= dataset_size:
