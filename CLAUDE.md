@@ -152,6 +152,80 @@ python -m nanochat.research_analysis generate_research_report \
     --output report.md
 ```
 
+## Directional Chat Interface
+
+The chat interfaces (CLI and Web) support models trained in different directions:
+
+### Model Directions
+
+1. **Forward Models** (standard)
+   - Normal left-to-right chat
+   - No special commands needed
+
+2. **Backward Models**
+   - User provides "ending" messages
+   - Model generates what came before
+   - Conversation displays in normal chronological order
+
+3. **Bidirectional Models**
+   - Per-turn direction toggle
+   - CLI: Use `/forward` or `/backward` commands
+   - Web: Direction displayed in header
+
+### CLI Commands
+
+```bash
+# Chat with forward model (standard)
+python -m scripts.chat_cli --source=sft
+
+# Chat with backward model
+python -m scripts.chat_cli --source=base --model-tag=d20_backward
+
+# Chat with bidirectional model
+python -m scripts.chat_cli --source=base --model-tag=d20_bidirectional
+```
+
+**Available commands during chat:**
+- `/quit`, `/exit` - End conversation
+- `/clear` - Start new conversation
+- `/forward` - Switch to forward generation (bidirectional only)
+- `/backward` - Switch to backward generation (bidirectional only)
+
+### Web Interface
+
+```bash
+python -m scripts.chat_web --source=sft --model-tag=<model>
+```
+
+Open http://localhost:8000
+
+The web interface displays the model direction in the header with visual indicators:
+- → forward
+- ← backward
+- ↔ bidirectional
+
+### Implementation Details
+
+**Architecture:**
+- `DirectionalChatEngine` base class with three implementations
+- `ForwardChatEngine` - standard chat
+- `BackwardChatEngine` - reversed interaction with display reversal
+- `BidirectionalChatEngine` - per-turn direction control
+
+**Direction Detection:**
+Models automatically advertise their direction via checkpoint metadata. Chat interfaces detect this and enable appropriate features.
+
+**Direction Tokens:**
+Bidirectional models use special tokens:
+- `<|forward|>` - marks forward generation
+- `<|backward|>` - marks backward generation
+
+**Files:**
+- `nanochat/directional_chat_engine.py` - Chat engine implementations
+- `scripts/chat_cli.py` - CLI interface with direction support
+- `scripts/chat_web.py` - Web server with direction info endpoint
+- `nanochat/ui.html` - Web UI with direction display
+
 ## Implementation Status
 
 ### ✅ Completed (Original nanochat)
