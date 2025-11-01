@@ -18,6 +18,7 @@ To chat, open the URL printed in the console. (If on cloud box, make sure to use
 Endpoints:
   GET  /           - Chat UI
   POST /chat/completions - Chat API (streaming only)
+  GET  /model_info - Model direction and capabilities
   GET  /health     - Health check with worker pool status
   GET  /stats      - Worker pool statistics and GPU utilization
 
@@ -384,6 +385,23 @@ async def chat_completions(request: ChatRequest):
         # Make sure to release worker even on error
         await worker_pool.release_worker(worker)
         raise e
+
+@app.get("/model_info")
+async def model_info():
+    """Get model direction and capabilities."""
+    worker_pool = getattr(app.state, 'worker_pool', None)
+    if worker_pool is None or len(worker_pool.workers) == 0:
+        return {'loaded': False}
+
+    # Get metadata from first worker (all workers have same model)
+    meta = worker_pool.workers[0].meta
+    chat_engine = worker_pool.workers[0].chat_engine
+
+    return {
+        'loaded': True,
+        'direction': meta.get('direction', 'forward'),
+        'can_toggle': chat_engine.can_toggle_direction()
+    }
 
 @app.get("/health")
 async def health():
