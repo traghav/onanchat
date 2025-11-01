@@ -37,6 +37,7 @@ device_type = "" # cuda|cpu|mps (empty => autodetect good device type default, i
 # Model architecture
 depth = 20 # the depth of the Transformer model to train, rest of the kwargs are derived
 max_seq_len = 2048 # max context length
+direction = "forward" # forward|backward|bidirectional - direction for language modeling
 # Training horizon. Only one of these 3 will be used, in this order of precedence.
 num_iterations = -1 # explicit number of steps of the optimization (-1 = disable)
 target_flops = -1.0 # calculate num_iterations to reach target_flops. Useful for scaling laws experiments (-1 = disable)
@@ -168,9 +169,13 @@ if resuming:
 # -----------------------------------------------------------------------------
 # Initialize the DataLoaders for train/val
 tokens_dir = os.path.join(base_dir, "tokenized_data")
+from nanochat.direction_dataloader import direction_aware_dataloader
+from nanochat.common import validate_direction
+validate_direction(direction)
+print0(f"Using direction: {direction}")
 dataloader_resume_state_dict = None if not resuming else meta_data["dataloader_state_dict"]
-train_loader = tokenizing_distributed_data_loader_with_state(device_batch_size, max_seq_len, split="train", device=device, resume_state_dict=dataloader_resume_state_dict)
-build_val_loader = lambda: tokenizing_distributed_data_loader(device_batch_size, max_seq_len, split="val", device=device)
+train_loader = direction_aware_dataloader(device_batch_size, max_seq_len, split="train", direction=direction, device=device, resume_state_dict=dataloader_resume_state_dict)
+build_val_loader = lambda: direction_aware_dataloader(device_batch_size, max_seq_len, split="val", direction=direction, device=device)
 x, y, dataloader_state_dict = next(train_loader) # kick off load of the very first batch of data
 
 # -----------------------------------------------------------------------------
@@ -279,6 +284,7 @@ while True:
             [opt.state_dict() for opt in optimizers], # optimizer states
             { # metadata saved as json
                 "step": step,
+                "direction": direction,
                 "val_bpb": val_bpb, # loss at last step
                 "model_config": model_config_kwargs,
                 "user_config": user_config, # inputs to the training script
