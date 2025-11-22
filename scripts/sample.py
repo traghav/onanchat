@@ -39,6 +39,11 @@ model, tokenizer, meta = load_model(
 direction = meta.get("direction", "forward")
 print(f"Model direction: {direction}")
 print(f"Loaded from step: {meta.get('step', 'unknown')}")
+
+# For backward models, optionally reverse output for readability
+reverse_output = direction == "backward"
+if reverse_output:
+    print("Note: Output will be reversed for readability (backward model generates right-to-left)")
 print()
 
 # Create engine
@@ -74,7 +79,19 @@ while True:
         for i, sample in enumerate(samples):
             if args.num_samples > 1:
                 print(f"\nSample {i+1}:")
-            print(tokenizer.decode(sample))
+            decoded = tokenizer.decode(sample)
+
+            # For backward models, reverse the output for readability
+            if reverse_output:
+                # Split into tokens, reverse (keeping BOS at start), rejoin
+                tokens_text = decoded.split()
+                if tokens_text and tokens_text[0] == '<|bos|>':
+                    reversed_text = tokens_text[0] + ' ' + ' '.join(reversed(tokens_text[1:]))
+                else:
+                    reversed_text = ' '.join(reversed(tokens_text))
+                print(reversed_text)
+            else:
+                print(decoded)
 
     except KeyboardInterrupt:
         print("\nExiting...")
