@@ -62,6 +62,9 @@ while True:
         if prompt.lower() in ['quit', 'exit', 'q']:
             break
 
+        # Allow typing "\n" to embed newlines in the prompt
+        prompt = prompt.replace("\\n", "\n")
+
         if not prompt.strip():
             continue
 
