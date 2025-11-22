@@ -24,7 +24,7 @@ args = parser.parse_args()
 
 # Setup device
 device_type = autodetect_device_type() if args.device == "" else args.device
-device = device_type
+device = torch.device(device_type)
 
 # Load model
 print(f"Loading model: source={args.source}, model_tag={args.model_tag or 'default'}, step={args.step if args.step > 0 else 'latest'}")
