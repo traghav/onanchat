@@ -85,12 +85,15 @@ while True:
 
             # For backward models, reverse the output for readability
             if reverse_output:
+                # Debug: show raw output
+                # print(f"[RAW]: {decoded}")
+
                 # Remove <|bos|> token first
                 decoded_clean = decoded.replace('<|bos|>', '').strip()
 
-                # Reverse at word boundaries
-                words = decoded_clean.split()
-                reversed_text = ' '.join(reversed(words))
+                # Reverse character by character, not word by word
+                # This preserves punctuation attachment
+                reversed_text = decoded_clean[::-1]
                 print(reversed_text)
             else:
                 print(decoded)
