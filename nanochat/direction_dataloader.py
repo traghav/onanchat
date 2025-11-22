@@ -16,7 +16,8 @@ from nanochat.tokenizer import get_tokenizer
 
 
 def direction_aware_dataloader(B, T, split, direction="forward",
-                                tokenizer_threads=4, tokenizer_batch_size=128, device="cuda"):
+                                tokenizer_threads=4, tokenizer_batch_size=128, device="cuda",
+                                resume_state_dict=None):
     """
     Stream pretraining data with direction-specific token manipulation.
 
@@ -28,9 +29,10 @@ def direction_aware_dataloader(B, T, split, direction="forward",
         tokenizer_threads: Number of tokenizer threads
         tokenizer_batch_size: Batch size for tokenization
         device: Device to place tensors on
+        resume_state_dict: Optional state dict for resuming (currently ignored for simplicity)
 
     Yields:
-        (inputs, targets): Batches of shape (B, T) with appropriate direction
+        (inputs, targets, state_dict): Batches of shape (B, T) with appropriate direction
     """
     from nanochat.common import get_dist_info
 
@@ -97,5 +99,9 @@ def direction_aware_dataloader(B, T, split, direction="forward",
         inputs = inputs_cpu.view(B, T).to(device=device, dtype=torch.int32, non_blocking=True)
         targets = targets_cpu.view(B, T).to(device=device, dtype=torch.int64, non_blocking=True)
 
+        # Create minimal state dict for checkpoint resumption compatibility
+        # For simplicity, we don't implement full resumption for direction-aware loaders yet
+        state_dict = {"output_batch_index": output_batch_index}
+
         output_batch_index += 1
-        yield inputs, targets
+        yield inputs, targets, state_dict
