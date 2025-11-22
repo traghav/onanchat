@@ -31,6 +31,7 @@ print(f"Loading model: source={args.source}, model_tag={args.model_tag or 'defau
 model, tokenizer, meta = load_model(
     args.source,
     device,
+    phase="eval",
     model_tag=args.model_tag if args.model_tag else None,
     step=args.step if args.step > 0 else None
 )
