@@ -66,6 +66,7 @@ while True:
 
         # Tokenize and generate
         tokens = tokenizer(prompt, prepend='<|bos|>')
+        prompt_len = len(tokens)
 
         with autocast_ctx if callable(autocast_ctx) else autocast_ctx:
             samples, _ = engine.generate_batch(
@@ -79,17 +80,18 @@ while True:
         for i, sample in enumerate(samples):
             if args.num_samples > 1:
                 print(f"\nSample {i+1}:")
-            decoded = tokenizer.decode(sample)
+
+            # Only decode the newly generated tokens (skip the prompt)
+            generated_tokens = sample[prompt_len:]
+            decoded = tokenizer.decode(generated_tokens)
 
             # For backward models, reverse the output for readability
             if reverse_output:
-                # Split into tokens, reverse, and remove BOS (it's at the "end" conceptually)
+                # Split into tokens and reverse
                 tokens_text = decoded.split()
-                if tokens_text and tokens_text[0] == '<|bos|>':
-                    # Remove BOS and reverse the rest
-                    reversed_text = ' '.join(reversed(tokens_text[1:]))
-                else:
-                    reversed_text = ' '.join(reversed(tokens_text))
+                # Remove any BOS tokens that might appear
+                tokens_text = [t for t in tokens_text if t != '<|bos|>']
+                reversed_text = ' '.join(reversed(tokens_text))
                 print(reversed_text)
             else:
                 print(decoded)
