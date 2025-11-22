@@ -10,7 +10,7 @@ import argparse
 import torch
 from nanochat.checkpoint_manager import load_model
 from nanochat.engine import Engine
-from nanochat.common import autodetect_device_type
+from nanochat.common import autodetect_device_type, reverse_tokens
 
 parser = argparse.ArgumentParser(description="Sample from a trained model")
 parser.add_argument("--source", type=str, default="base", help="Model source (base|mid|sft|rl)")
@@ -49,6 +49,7 @@ print()
 # Create engine
 engine = Engine(model, tokenizer)
 autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.bfloat16) if device_type == "cuda" else lambda: None
+bos_token_id = tokenizer.get_bos_token_id()
 
 # Interactive sampling loop
 print("Enter prompts to sample from the model. Type 'quit' or 'exit' to stop.")
@@ -65,7 +66,12 @@ while True:
             continue
 
         # Tokenize and generate
-        tokens = tokenizer(prompt, prepend='<|bos|>')
+        tokens = tokenizer(prompt, prepend=bos_token_id)
+
+        # Backward models were trained on reversed sequences (BOS pinned at position 0),
+        # so flip the prompt tokens before feeding them into the model.
+        if direction == "backward":
+            tokens = reverse_tokens(tokens, keep_bos=True)
 
         with autocast_ctx if callable(autocast_ctx) else autocast_ctx:
             samples, _ = engine.generate_batch(
@@ -80,23 +86,16 @@ while True:
             if args.num_samples > 1:
                 print(f"\nSample {i+1}:")
 
-            # Decode the full sequence (including prompt for coherence)
-            decoded = tokenizer.decode(sample)
-
-            # For backward models, reverse the output for readability
+            # For backward models, reverse tokens back to chronological order for readability.
             if reverse_output:
-                # Debug: show raw output
-                # print(f"[RAW]: {decoded}")
-
-                # Remove <|bos|> token first
-                decoded_clean = decoded.replace('<|bos|>', '').strip()
-
-                # Reverse character by character, not word by word
-                # This preserves punctuation attachment
-                reversed_text = decoded_clean[::-1]
-                print(reversed_text)
+                # Drop BOS for display, then reverse token order
+                display_tokens = sample[1:] if sample and sample[0] == bos_token_id else sample
+                readable_tokens = list(reversed(display_tokens))
+                decoded = tokenizer.decode(readable_tokens)
             else:
-                print(decoded)
+                decoded = tokenizer.decode(sample)
+
+            print(decoded)
 
     except KeyboardInterrupt:
         print("\nExiting...")

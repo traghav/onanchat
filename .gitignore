@@ -30,3 +30,5 @@ wordchess.pub
 wordchess
 .ipynb_checkpoints
 .jupyter-env/
+
+id_ed25519*
