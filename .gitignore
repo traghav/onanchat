@@ -5,3 +5,28 @@ rustbpe/target/
 dev-ignore/
 report.md
 eval_bundle/
+
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+*.json
+
+# Virtual environments
+.venv
+.env
+
+puzzle_results/
+puzzle_results_new/
+.DS_Store
+
+wc*
+wordchess.pub
+wordchess
+.ipynb_checkpoints
+.jupyter-env/
