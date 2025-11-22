@@ -83,10 +83,11 @@ while True:
 
             # For backward models, reverse the output for readability
             if reverse_output:
-                # Split into tokens, reverse (keeping BOS at start), rejoin
+                # Split into tokens, reverse, and remove BOS (it's at the "end" conceptually)
                 tokens_text = decoded.split()
                 if tokens_text and tokens_text[0] == '<|bos|>':
-                    reversed_text = tokens_text[0] + ' ' + ' '.join(reversed(tokens_text[1:]))
+                    # Remove BOS and reverse the rest
+                    reversed_text = ' '.join(reversed(tokens_text[1:]))
                 else:
                     reversed_text = ' '.join(reversed(tokens_text))
                 print(reversed_text)
