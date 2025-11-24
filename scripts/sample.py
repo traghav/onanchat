@@ -20,6 +20,9 @@ parser.add_argument("--max-tokens", type=int, default=100, help="Maximum tokens 
 parser.add_argument("--num-samples", type=int, default=1, help="Number of samples per prompt")
 parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature")
 parser.add_argument("--device", type=str, default="", help="Device (cuda|cpu|mps, empty = autodetect)")
+parser.add_argument("--gen-direction", type=str, default="auto",
+                    choices=["auto", "forward", "backward"],
+                    help="Generation direction for bidirectional models (auto uses model default)")
 args = parser.parse_args()
 
 # Setup device
@@ -40,20 +43,28 @@ direction = meta.get("direction", "forward")
 print(f"Model direction: {direction}")
 print(f"Loaded from step: {meta.get('step', 'unknown')}")
 
-# For backward models, optionally reverse output for readability
-reverse_output = direction == "backward"
+# Resolve generation direction (needed for bidirectional)
+if args.gen_direction == "auto":
+    gen_direction = "backward" if direction == "backward" else "forward"
+else:
+    gen_direction = args.gen_direction
+
+# For backward generation, optionally reverse output for readability
+reverse_output = gen_direction == "backward"
 if reverse_output:
-    print("Note: Output will be reversed for readability (backward model generates right-to-left)")
+    print("Note: Output will be reversed for readability (backward generation produces right-to-left tokens)")
 print()
 
 # Create engine
 engine = Engine(model, tokenizer)
 autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=torch.bfloat16) if device_type == "cuda" else lambda: None
 bos_token_id = tokenizer.get_bos_token_id()
+forward_token_id = getattr(tokenizer, "get_forward_token_id", lambda: None)()
+backward_token_id = getattr(tokenizer, "get_backward_token_id", lambda: None)()
 
 # Interactive sampling loop
 print("Enter prompts to sample from the model. Type 'quit' or 'exit' to stop.")
-print(f"Settings: max_tokens={args.max_tokens}, num_samples={args.num_samples}, temperature={args.temperature}")
+print(f"Settings: max_tokens={args.max_tokens}, num_samples={args.num_samples}, temperature={args.temperature}, gen_direction={gen_direction}")
 print("-" * 70)
 
 while True:
@@ -71,10 +82,21 @@ while True:
         # Tokenize and generate
         tokens = tokenizer(prompt, prepend=bos_token_id)
 
-        # Backward models were trained on reversed sequences (BOS pinned at position 0),
-        # so flip the prompt tokens before feeding them into the model.
-        if direction == "backward":
+        # Direction-aware prompt shaping
+        if direction == "backward" and gen_direction == "backward":
+            # Backward-only model: reverse prompt tokens (BOS stays first)
             tokens = reverse_tokens(tokens, keep_bos=True)
+        elif direction == "bidirectional":
+            if gen_direction == "forward":
+                # Insert forward marker after BOS
+                if forward_token_id is None:
+                    raise ValueError("Tokenizer missing forward direction token")
+                tokens = [bos_token_id, forward_token_id] + tokens[1:]
+            else:
+                # Backward generation: insert backward marker and reverse after BOS
+                if backward_token_id is None:
+                    raise ValueError("Tokenizer missing backward direction token")
+                tokens = [bos_token_id, backward_token_id] + reverse_tokens(tokens[1:], keep_bos=False)
 
         with autocast_ctx if callable(autocast_ctx) else autocast_ctx:
             samples, _ = engine.generate_batch(
@@ -90,13 +112,24 @@ while True:
                 print(f"\nSample {i+1}:")
 
             # For backward models, reverse tokens back to chronological order for readability.
+            display_tokens = sample
+
+            # Strip BOS for display
+            if display_tokens and display_tokens[0] == bos_token_id:
+                display_tokens = display_tokens[1:]
+
+            # Strip direction marker for bidirectional display
+            if direction == "bidirectional" and display_tokens:
+                if forward_token_id is not None and display_tokens[0] == forward_token_id:
+                    display_tokens = display_tokens[1:]
+                elif backward_token_id is not None and display_tokens[0] == backward_token_id:
+                    display_tokens = display_tokens[1:]
+
             if reverse_output:
-                # Drop BOS for display, then reverse token order
-                display_tokens = sample[1:] if sample and sample[0] == bos_token_id else sample
                 readable_tokens = list(reversed(display_tokens))
                 decoded = tokenizer.decode(readable_tokens)
             else:
-                decoded = tokenizer.decode(sample)
+                decoded = tokenizer.decode(display_tokens)
 
             print(decoded)
 
