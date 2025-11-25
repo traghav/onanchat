@@ -230,18 +230,24 @@ class BackwardChatEngine(DirectionalChatEngine):
         self.conversation_tokens = [tokenizer.get_bos_token_id()]
 
     def add_user_message(self, text: str) -> None:
-        """Add user message (prepend to backward conversation)."""
+        """
+        Add human input as the assistant's message (prepend in backward order).
+
+        In backward SFT, the most recent turn is typically an assistant reply.
+        We wrap the human input with assistant tags so the prompt matches the
+        training distribution (model sees an assistant turn at the end of time).
+        """
         from nanochat.common import reverse_tokens
 
-        user_start = self.tokenizer.encode_special("<|user_start|>")
-        user_end = self.tokenizer.encode_special("<|user_end|>")
-        user_tokens = self.tokenizer.encode(text)
+        assistant_start = self.tokenizer.encode_special("<|assistant_start|>")
+        assistant_end = self.tokenizer.encode_special("<|assistant_end|>")
+        assistant_tokens = self.tokenizer.encode(text)
 
-        # Reverse the user tokens (but not the markers)
-        reversed_tokens = reverse_tokens(user_tokens, keep_bos=False)
+        # Reverse the assistant tokens (but not the markers)
+        reversed_tokens = reverse_tokens(assistant_tokens, keep_bos=False)
 
-        # Build: user_end + reversed_tokens + user_start (backward order)
-        msg_tokens = [user_end] + reversed_tokens + [user_start]
+        # Build: assistant_end + reversed_tokens + assistant_start (backward order)
+        msg_tokens = [assistant_end] + reversed_tokens + [assistant_start]
 
         # Prepend to conversation (after BOS)
         self.conversation_tokens = ([self.conversation_tokens[0]] +
@@ -250,11 +256,16 @@ class BackwardChatEngine(DirectionalChatEngine):
 
     def generate_response(self, temperature: float = 0.6, top_k: int = 50,
                          max_tokens: int = 2048) -> str:
-        """Generate response (prepend to backward conversation)."""
+        """
+        Generate response (prepend to backward conversation).
+
+        The model predicts the preceding user message (the "cause") given the
+        assistant reply the human just supplied.
+        """
         from nanochat.common import reverse_tokens
 
-        assistant_start = self.tokenizer.encode_special("<|assistant_start|>")
-        assistant_end = self.tokenizer.encode_special("<|assistant_end|>")
+        user_start = self.tokenizer.encode_special("<|user_start|>")
+        user_end = self.tokenizer.encode_special("<|user_end|>")
 
         # Prompt: existing backward-ordered conversation (BOS already at [0])
         prompt = list(self.conversation_tokens)
@@ -274,9 +285,9 @@ class BackwardChatEngine(DirectionalChatEngine):
             tok = token_column[0]
             raw_tokens.append(tok)
 
-            # Stop when we reach assistant_start (backward boundary)
-            if tok == assistant_start:
-                stop_reason = "assistant_start"
+            # Stop when we reach user_start (backward boundary)
+            if tok == user_start:
+                stop_reason = "user_start"
                 break
 
             response_tokens.append(tok)
@@ -285,19 +296,19 @@ class BackwardChatEngine(DirectionalChatEngine):
         if not response_tokens:
             # Prepend empty response markers
             self.conversation_tokens = ([self.conversation_tokens[0]] +
-                                       [assistant_start, assistant_end] +
+                                       [user_end, user_start] +
                                        self.conversation_tokens[1:])
             self._record_generation(prompt, [], raw_tokens, "backward", stop_reason)
             return ""
 
         # Prepend to conversation (backward order). Add the stop token to preserve turn structure.
-        new_tokens = list(response_tokens) + [assistant_start]
+        new_tokens = list(response_tokens) + [user_start]
         self.conversation_tokens = ([self.conversation_tokens[0]] +
                                    new_tokens +
                                    self.conversation_tokens[1:])
 
         # Reverse for display
-        display_tokens = [t for t in response_tokens if t not in (assistant_start, assistant_end)]
+        display_tokens = [t for t in response_tokens if t not in (user_start, user_end)]
         display_tokens = reverse_tokens(display_tokens, keep_bos=False)
         self._record_generation(prompt, response_tokens, raw_tokens, "backward", stop_reason)
         return self.tokenizer.decode(display_tokens)
@@ -318,24 +329,24 @@ class BackwardChatEngine(DirectionalChatEngine):
         while i < len(self.conversation_tokens):
             tok = self.conversation_tokens[i]
 
-            if tok == assistant_start:
-                # Extract assistant message (backward)
+            if tok == assistant_end:
+                # Extract assistant message (backward - starts with end token)
                 i += 1
                 msg_tokens = []
                 start_pos = i  # Track start for infinite loop detection
-                while i < len(self.conversation_tokens) and self.conversation_tokens[i] != assistant_end:
+                while i < len(self.conversation_tokens) and self.conversation_tokens[i] != assistant_start:
                     msg_tokens.append(self.conversation_tokens[i])
                     i += 1
-                # Check if we reached end without finding assistant_end
+                # Check if we reached end without finding assistant_start
                 if i >= len(self.conversation_tokens):
                     raise ValueError(
-                        f"Malformed conversation: assistant_start at position {start_pos-1} "
-                        f"has no matching assistant_end token"
+                        f"Malformed conversation: assistant_end at position {start_pos-1} "
+                        f"has no matching assistant_start token"
                     )
                 # Reverse for display
                 display_tokens = reverse_tokens(msg_tokens, keep_bos=False)
                 messages.append({"role": "assistant", "content": self.tokenizer.decode(display_tokens)})
-                i += 1  # Skip assistant_end
+                i += 1  # Skip assistant_start
 
             elif tok == user_end:
                 # Extract user message (backward - starts with end token)
