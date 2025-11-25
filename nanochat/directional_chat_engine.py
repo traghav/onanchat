@@ -256,8 +256,9 @@ class BackwardChatEngine(DirectionalChatEngine):
         assistant_start = self.tokenizer.encode_special("<|assistant_start|>")
         assistant_end = self.tokenizer.encode_special("<|assistant_end|>")
 
-        # Prompt: existing backward-ordered conversation (BOS already at [0])
-        prompt = list(self.conversation_tokens)
+        # Prompt: seed with assistant_end then the existing backward-ordered conversation
+        # Backward order for an assistant turn is: <|assistant_end|> content ... <|assistant_start|>
+        prompt = [assistant_end] + list(self.conversation_tokens)
 
         # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
         response_tokens = []
