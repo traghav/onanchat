@@ -279,10 +279,6 @@ class BackwardChatEngine(DirectionalChatEngine):
             if tok == assistant_start:
                 stop_reason = "assistant_start"
                 break
-            # Skip a leading assistant_end (model often emits it first in backward order)
-            if tok == assistant_end and not response_tokens:
-                stop_reason = "assistant_end_first"
-                continue
 
             response_tokens.append(tok)
 
