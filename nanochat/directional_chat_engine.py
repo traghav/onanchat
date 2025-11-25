@@ -131,7 +131,8 @@ class ForwardChatEngine(DirectionalChatEngine):
             num_samples=1,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_k=top_k
+            top_k=top_k,
+            stop_on_assistant_end=False,
         ):
             # Extract token from batch dimension (num_samples=1, so take first)
             tok = token_column[0]
@@ -260,27 +261,28 @@ class BackwardChatEngine(DirectionalChatEngine):
         # Backward order for an assistant turn is: <|assistant_end|> content ... <|assistant_start|>
         prompt = [assistant_end] + list(self.conversation_tokens)
 
-        # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
-        response_tokens = []
-        raw_tokens = []
-        stop_reason = "max_tokens"
-        for token_column, token_masks in self.engine.generate(
+        # Generate in batch mode to avoid streaming stop conditions; don't stop on assistant_end
+        generated, _ = self.engine.generate_batch(
             prompt,
             num_samples=1,
             max_tokens=max_tokens,
             temperature=temperature,
-            top_k=top_k
-        ):
-            # Extract token from batch dimension (num_samples=1, so take first)
-            tok = token_column[0]
-            raw_tokens.append(tok)
+            top_k=top_k,
+            stop_on_assistant_end=False,
+        )
+        generated_tokens = generated[0]
+        raw_tokens = generated_tokens[len(prompt):]  # strip the prompt
 
-            # Stop when we reach assistant_start (backward boundary)
-            if tok == assistant_start:
-                stop_reason = "assistant_start"
-                break
-
-            response_tokens.append(tok)
+        # Find assistant_start boundary if present
+        stop_reason = "max_tokens"
+        if assistant_start in raw_tokens:
+            boundary = raw_tokens.index(assistant_start)
+            response_tokens = raw_tokens[:boundary]
+            stop_reason = "assistant_start"
+            history_tokens = raw_tokens[: boundary + 1]  # include the boundary
+        else:
+            response_tokens = raw_tokens
+            history_tokens = raw_tokens
 
         # Handle empty response case
         if not response_tokens:
@@ -291,10 +293,9 @@ class BackwardChatEngine(DirectionalChatEngine):
             self._record_generation(prompt, [], raw_tokens, "backward", stop_reason)
             return ""
 
-        # Prepend to conversation (backward order). Add the stop token to preserve turn structure.
-        new_tokens = list(response_tokens) + [assistant_start]
+        # Prepend to conversation (backward order). Keep boundary if found.
         self.conversation_tokens = ([self.conversation_tokens[0]] +
-                                   new_tokens +
+                                   history_tokens +
                                    self.conversation_tokens[1:])
 
         # Reverse for display
@@ -435,20 +436,17 @@ class BidirectionalChatEngine(DirectionalChatEngine):
                 num_samples=1,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_k=top_k
+                top_k=top_k,
+                stop_on_assistant_end=False,
             ):
                 # Extract token from batch dimension (num_samples=1, so take first)
                 tok = token_column[0]
                 raw_tokens.append(tok)
 
-                # Stop at assistant_end token
-                if tok == assistant_end:
-                    if response_tokens:
-                        stop_reason = "assistant_end"
-                        break
-                    else:
-                        stop_reason = "assistant_end_first"
-                        continue
+                # Stop when we reach assistant_start (backward boundary)
+                if tok == assistant_start:
+                    stop_reason = "assistant_start"
+                    break
 
                 response_tokens.append(tok)
 
@@ -482,20 +480,17 @@ class BidirectionalChatEngine(DirectionalChatEngine):
                 num_samples=1,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_k=top_k
+                top_k=top_k,
+                stop_on_assistant_end=False,
             ):
                 # Extract token from batch dimension (num_samples=1, so take first)
                 tok = token_column[0]
                 raw_tokens.append(tok)
 
-                # Stop at assistant_end token
-                if tok == assistant_end:
-                    if response_tokens:
-                        stop_reason = "assistant_end"
-                        break
-                    else:
-                        stop_reason = "assistant_end_first"
-                        continue
+                # Stop when we reach assistant_start (backward boundary)
+                if tok == assistant_start:
+                    stop_reason = "assistant_start"
+                    break
 
                 response_tokens.append(tok)
 
