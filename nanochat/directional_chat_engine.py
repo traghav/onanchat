@@ -274,14 +274,10 @@ class BackwardChatEngine(DirectionalChatEngine):
             tok = token_column[0]
             raw_tokens.append(tok)
 
-            # Stop at assistant_end token
-            if tok == assistant_end:
-                if response_tokens:
-                    stop_reason = "assistant_end"
-                    break
-                else:
-                    stop_reason = "assistant_end_first"
-                    continue
+            # Stop when we reach assistant_start (backward boundary)
+            if tok == assistant_start:
+                stop_reason = "assistant_start"
+                break
 
             response_tokens.append(tok)
 
@@ -294,13 +290,15 @@ class BackwardChatEngine(DirectionalChatEngine):
             self._record_generation(prompt, [], raw_tokens, "backward", stop_reason)
             return ""
 
-        # Prepend to conversation (backward order)
+        # Prepend to conversation (backward order). Add the stop token to preserve turn structure.
+        new_tokens = list(response_tokens) + [assistant_start]
         self.conversation_tokens = ([self.conversation_tokens[0]] +
-                                   [assistant_start] + response_tokens + [assistant_end] +
+                                   new_tokens +
                                    self.conversation_tokens[1:])
 
         # Reverse for display
-        display_tokens = reverse_tokens(response_tokens, keep_bos=False)
+        display_tokens = [t for t in response_tokens if t not in (assistant_start, assistant_end)]
+        display_tokens = reverse_tokens(display_tokens, keep_bos=False)
         self._record_generation(prompt, response_tokens, raw_tokens, "backward", stop_reason)
         return self.tokenizer.decode(display_tokens)
 
