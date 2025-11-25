@@ -122,7 +122,6 @@ class ForwardChatEngine(DirectionalChatEngine):
 
         # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
         response_tokens = []
-        skip_initial_end = True  # ignore an immediate <|assistant_end|> to avoid empty replies
         for token_column, token_masks in self.engine.generate(
             prompt,
             num_samples=1,
@@ -135,10 +134,10 @@ class ForwardChatEngine(DirectionalChatEngine):
 
             # Stop at assistant_end token
             if tok == assistant_end:
-                if skip_initial_end and not response_tokens:
-                    skip_initial_end = False
+                if response_tokens:
+                    break
+                else:
                     continue
-                break
 
             response_tokens.append(tok)
 
@@ -256,7 +255,6 @@ class BackwardChatEngine(DirectionalChatEngine):
 
         # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
         response_tokens = []
-        skip_initial_end = True  # ignore an immediate <|assistant_end|> to avoid empty replies
         for token_column, token_masks in self.engine.generate(
             prompt,
             num_samples=1,
@@ -269,10 +267,10 @@ class BackwardChatEngine(DirectionalChatEngine):
 
             # Stop at assistant_end token
             if tok == assistant_end:
-                if skip_initial_end and not response_tokens:
-                    skip_initial_end = False
+                if response_tokens:
+                    break
+                else:
                     continue
-                break
 
             response_tokens.append(tok)
 
@@ -420,7 +418,6 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
             # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
             response_tokens = []
-            skip_initial_end = True  # ignore an immediate <|assistant_end|> to avoid empty replies
             for token_column, token_masks in self.engine.generate(
                 prompt,
                 num_samples=1,
@@ -433,10 +430,10 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
                 # Stop at assistant_end token
                 if tok == assistant_end:
-                    if skip_initial_end and not response_tokens:
-                        skip_initial_end = False
+                    if response_tokens:
+                        break
+                    else:
                         continue
-                    break
 
                 response_tokens.append(tok)
 
@@ -463,7 +460,6 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
             # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
             response_tokens = []
-            skip_initial_end = True  # ignore an immediate <|assistant_end|> to avoid empty replies
             for token_column, token_masks in self.engine.generate(
                 prompt,
                 num_samples=1,
@@ -476,10 +472,10 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
                 # Stop at assistant_end token
                 if tok == assistant_end:
-                    if skip_initial_end and not response_tokens:
-                        skip_initial_end = False
+                    if response_tokens:
+                        break
+                    else:
                         continue
-                    break
 
                 response_tokens.append(tok)
 
