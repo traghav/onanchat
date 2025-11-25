@@ -161,7 +161,8 @@ def sample_next_token(logits, rng, temperature=1.0, top_k=None):
     assert temperature >= 0.0, "temperature must be non-negative"
     if temperature == 0.0:
         return torch.argmax(logits, dim=-1, keepdim=True)
-    if top_k is not None:
+    # Treat non-positive top_k as disabled to avoid zero-sized multinomial.
+    if top_k is not None and top_k > 0:
         k = min(top_k, logits.size(-1))
         vals, idx = torch.topk(logits, k, dim=-1)
         vals = vals / temperature
