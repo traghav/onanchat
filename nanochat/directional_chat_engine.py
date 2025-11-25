@@ -407,15 +407,17 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
         user_start = self.tokenizer.encode_special("<|user_start|>")
         user_end = self.tokenizer.encode_special("<|user_end|>")
+        assistant_start = self.tokenizer.encode_special("<|assistant_start|>")
+        assistant_end = self.tokenizer.encode_special("<|assistant_end|>")
         user_tokens = self.tokenizer.encode(text)
 
         if self.current_direction == 'forward':
             # Forward: append normally
             self.conversation_tokens.extend([user_start] + user_tokens + [user_end])
         else:
-            # Backward: prepend
+            # Backward: human supplies the assistant turn; wrap with assistant tags
             reversed_tokens = reverse_tokens(user_tokens, keep_bos=False)
-            msg_tokens = [user_end] + reversed_tokens + [user_start]
+            msg_tokens = [assistant_end] + reversed_tokens + [assistant_start]
             self.conversation_tokens = ([self.conversation_tokens[0]] +
                                        msg_tokens +
                                        self.conversation_tokens[1:])
@@ -427,6 +429,8 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
         assistant_start = self.tokenizer.encode_special("<|assistant_start|>")
         assistant_end = self.tokenizer.encode_special("<|assistant_end|>")
+        user_start = self.tokenizer.encode_special("<|user_start|>")
+        user_end = self.tokenizer.encode_special("<|user_end|>")
 
         # Select direction token
         direction_token = (self.forward_token if self.current_direction == 'forward'
@@ -479,8 +483,8 @@ class BidirectionalChatEngine(DirectionalChatEngine):
             return self.tokenizer.decode(response_tokens)
 
         else:
-            # Backward: prepend direction token and generate
-            prompt = ([self.conversation_tokens[0], direction_token, assistant_start] +
+            # Backward: prepend direction token and generate user message (cause)
+            prompt = ([self.conversation_tokens[0], direction_token] +
                      self.conversation_tokens[1:])
 
             # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
@@ -498,14 +502,10 @@ class BidirectionalChatEngine(DirectionalChatEngine):
                 tok = token_column[0]
                 raw_tokens.append(tok)
 
-                # Stop at assistant_end token
-                if tok == assistant_end:
-                    if response_tokens:
-                        stop_reason = "assistant_end"
-                        break
-                    else:
-                        stop_reason = "assistant_end_first"
-                        continue
+                # Stop at user_start token (backward boundary for preceding user turn)
+                if tok == user_start:
+                    stop_reason = "user_start"
+                    break
 
                 response_tokens.append(tok)
 
@@ -513,7 +513,7 @@ class BidirectionalChatEngine(DirectionalChatEngine):
             if not response_tokens:
                 # Prepend empty response markers
                 self.conversation_tokens = ([self.conversation_tokens[0], direction_token,
-                                            assistant_start, assistant_end] +
+                                            user_end, user_start] +
                                            self.conversation_tokens[1:])
                 self.turn_directions.append('backward')
                 self._record_generation(prompt, [], raw_tokens, "backward", stop_reason)
@@ -521,13 +521,14 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
             # Prepend to conversation
             self.conversation_tokens = ([self.conversation_tokens[0], direction_token,
-                                        assistant_start] + response_tokens + [assistant_end] +
+                                        ] + response_tokens + [user_start] +
                                        self.conversation_tokens[1:])
 
             self.turn_directions.append('backward')
 
             # Reverse for display
-            display_tokens = reverse_tokens(response_tokens, keep_bos=False)
+            display_tokens = [t for t in response_tokens if t not in (user_start, user_end)]
+            display_tokens = reverse_tokens(display_tokens, keep_bos=False)
             self._record_generation(prompt, response_tokens, raw_tokens, "backward", stop_reason)
             return self.tokenizer.decode(display_tokens)
 

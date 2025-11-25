@@ -48,6 +48,9 @@ print("-" * 50)
 
 # Track current direction for display indicator (bidirectional models)
 current_direction = 'forward'
+# For fixed-direction models, align display state with the model's direction
+if not chat_engine.can_toggle_direction():
+    current_direction = direction
 
 while True:
 
@@ -58,8 +61,10 @@ while True:
         # Get the prompt interactively from the console
         try:
             # Direction indicator
-            arrow = '→' if current_direction == 'forward' else '←'
-            user_input = input(f"\n{arrow} You: ").strip()
+            active_direction = current_direction if chat_engine.can_toggle_direction() else direction
+            arrow = '→' if active_direction == 'forward' else '←'
+            prompt_label = "You" if active_direction == 'forward' else "Model"
+            user_input = input(f"\n{arrow} {prompt_label}: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\nGoodbye!")
             break
@@ -108,7 +113,10 @@ while True:
             max_tokens=2048
         )
 
-    print(f"Assistant: {response}")
+    # Label the generated role based on direction
+    active_direction = current_direction if chat_engine.can_toggle_direction() else direction
+    response_label = "Assistant" if active_direction == 'forward' else "User (Predicted)"
+    print(f"{response_label}: {response}")
 
     if args.debug:
         dbg = chat_engine.get_last_generation()
