@@ -249,9 +249,8 @@ class BackwardChatEngine(DirectionalChatEngine):
         assistant_start = self.tokenizer.encode_special("<|assistant_start|>")
         assistant_end = self.tokenizer.encode_special("<|assistant_end|>")
 
-        # Prompt: BOS + assistant_start + existing backward tokens
-        prompt = ([self.conversation_tokens[0], assistant_start] +
-                 self.conversation_tokens[1:])
+        # Prompt: existing backward-ordered conversation (BOS already at [0])
+        prompt = list(self.conversation_tokens)
 
         # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
         response_tokens = []
