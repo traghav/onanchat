@@ -246,6 +246,7 @@ while True:
             [opt.state_dict() for opt in optimizers], # TODO: make sure saving across ranks is done correctly
             {
                 "step": step,
+                "direction": direction,
                 "val_bpb": val_bpb, # loss at last step
                 "model_config": {
                     "sequence_len": max_seq_len,

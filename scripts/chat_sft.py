@@ -295,6 +295,7 @@ if master_process:
             "step": step,
             "val_loss": val_loss,
             **metrics,
+            "direction": direction,
             "model_config": model_config_kwargs,
         }
     )

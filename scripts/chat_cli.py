@@ -20,6 +20,7 @@ parser.add_argument('-t', '--temperature', type=float, default=0.6, help='Temper
 parser.add_argument('-k', '--top-k', type=int, default=50, help='Top-k sampling parameter')
 parser.add_argument('--device-type', type=str, default='', choices=['cuda', 'cpu', 'mps'], help='Device type for evaluation: cuda|cpu|mps. empty => autodetect')
 parser.add_argument('-d', '--dtype', type=str, default='bfloat16', choices=['float32', 'bfloat16'])
+parser.add_argument('--debug', action='store_true', help='Print raw model tokens for each assistant response')
 args = parser.parse_args()
 
 # Init the model and tokenizer
@@ -108,6 +109,24 @@ while True:
         )
 
     print(f"Assistant: {response}")
+
+    if args.debug:
+        dbg = chat_engine.get_last_generation()
+        if dbg:
+            gen_dir = dbg.get("direction", direction)
+            prompt_tokens = dbg.get("prompt_tokens", [])
+            gen_tokens = dbg.get("generated_tokens", [])
+            print(f"[DEBUG] direction={gen_dir} prompt_len={len(prompt_tokens)} gen_len={len(gen_tokens)}")
+            if gen_tokens:
+                decoded_raw = tokenizer.decode(gen_tokens)
+                if gen_dir == "backward":
+                    decoded_rev = tokenizer.decode(list(reversed(gen_tokens)))
+                    print(f"[DEBUG] decoded (raw order): {decoded_raw}")
+                    print(f"[DEBUG] decoded (reversed): {decoded_rev}")
+                else:
+                    print(f"[DEBUG] decoded: {decoded_raw}")
+            else:
+                print("[DEBUG] empty generation")
 
     # In the prompt mode, we only want a single response and exit
     if args.prompt:
