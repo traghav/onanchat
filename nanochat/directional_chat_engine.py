@@ -29,15 +29,17 @@ class DirectionalChatEngine:
         # Optional debugging: stash the last generation prompt/response.
         self._last_generation = None
 
-    # Debug helpers ---------------------------------------------------------
-    def _record_generation(self, prompt_tokens, generated_tokens, direction):
+    def _record_generation(self, prompt_tokens, response_tokens, raw_tokens, direction, stop_reason):
         """Keep a record of the last generation for debugging."""
         self._last_generation = {
             "prompt_tokens": list(prompt_tokens),
-            "generated_tokens": list(generated_tokens),
+            "generated_tokens": list(response_tokens),
+            "raw_tokens": list(raw_tokens),
             "direction": direction,
+            "stop_reason": stop_reason,
         }
 
+    # Debug helpers ---------------------------------------------------------
     def get_last_generation(self):
         """Return debug info for the last generation (or None)."""
         return self._last_generation
@@ -122,6 +124,8 @@ class ForwardChatEngine(DirectionalChatEngine):
 
         # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
         response_tokens = []
+        raw_tokens = []
+        stop_reason = "max_tokens"
         for token_column, token_masks in self.engine.generate(
             prompt,
             num_samples=1,
@@ -131,12 +135,15 @@ class ForwardChatEngine(DirectionalChatEngine):
         ):
             # Extract token from batch dimension (num_samples=1, so take first)
             tok = token_column[0]
+            raw_tokens.append(tok)
 
             # Stop at assistant_end token
             if tok == assistant_end:
                 if response_tokens:
+                    stop_reason = "assistant_end"
                     break
                 else:
+                    stop_reason = "assistant_end_first"
                     continue
 
             response_tokens.append(tok)
@@ -145,14 +152,14 @@ class ForwardChatEngine(DirectionalChatEngine):
         if not response_tokens:
             # Return empty string with warning marker
             self.conversation_tokens.extend([assistant_start, assistant_end])
-            self._record_generation(prompt, [], "forward")
+            self._record_generation(prompt, [], raw_tokens, "forward", stop_reason)
             return ""
 
         # Add to conversation
         self.conversation_tokens.extend([assistant_start] + response_tokens + [assistant_end])
 
         # Decode and return
-        self._record_generation(prompt, response_tokens, "forward")
+        self._record_generation(prompt, response_tokens, raw_tokens, "forward", stop_reason)
         return self.tokenizer.decode(response_tokens)
 
     def get_conversation_display(self) -> list[dict]:
@@ -254,6 +261,8 @@ class BackwardChatEngine(DirectionalChatEngine):
 
         # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
         response_tokens = []
+        raw_tokens = []
+        stop_reason = "max_tokens"
         for token_column, token_masks in self.engine.generate(
             prompt,
             num_samples=1,
@@ -263,12 +272,15 @@ class BackwardChatEngine(DirectionalChatEngine):
         ):
             # Extract token from batch dimension (num_samples=1, so take first)
             tok = token_column[0]
+            raw_tokens.append(tok)
 
             # Stop at assistant_end token
             if tok == assistant_end:
                 if response_tokens:
+                    stop_reason = "assistant_end"
                     break
                 else:
+                    stop_reason = "assistant_end_first"
                     continue
 
             response_tokens.append(tok)
@@ -279,7 +291,7 @@ class BackwardChatEngine(DirectionalChatEngine):
             self.conversation_tokens = ([self.conversation_tokens[0]] +
                                        [assistant_start, assistant_end] +
                                        self.conversation_tokens[1:])
-            self._record_generation(prompt, [], "backward")
+            self._record_generation(prompt, [], raw_tokens, "backward", stop_reason)
             return ""
 
         # Prepend to conversation (backward order)
@@ -289,7 +301,7 @@ class BackwardChatEngine(DirectionalChatEngine):
 
         # Reverse for display
         display_tokens = reverse_tokens(response_tokens, keep_bos=False)
-        self._record_generation(prompt, response_tokens, "backward")
+        self._record_generation(prompt, response_tokens, raw_tokens, "backward", stop_reason)
         return self.tokenizer.decode(display_tokens)
 
     def get_conversation_display(self) -> list[dict]:
@@ -417,6 +429,8 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
             # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
             response_tokens = []
+            raw_tokens = []
+            stop_reason = "max_tokens"
             for token_column, token_masks in self.engine.generate(
                 prompt,
                 num_samples=1,
@@ -426,12 +440,15 @@ class BidirectionalChatEngine(DirectionalChatEngine):
             ):
                 # Extract token from batch dimension (num_samples=1, so take first)
                 tok = token_column[0]
+                raw_tokens.append(tok)
 
                 # Stop at assistant_end token
                 if tok == assistant_end:
                     if response_tokens:
+                        stop_reason = "assistant_end"
                         break
                     else:
+                        stop_reason = "assistant_end_first"
                         continue
 
                 response_tokens.append(tok)
@@ -441,7 +458,7 @@ class BidirectionalChatEngine(DirectionalChatEngine):
                 # Append empty response markers
                 self.conversation_tokens.extend([direction_token, assistant_start, assistant_end])
                 self.turn_directions.append('forward')
-                self._record_generation(prompt, [], "forward")
+                self._record_generation(prompt, [], raw_tokens, "forward", stop_reason)
                 return ""
 
             # Append to conversation
@@ -449,7 +466,7 @@ class BidirectionalChatEngine(DirectionalChatEngine):
                                            response_tokens + [assistant_end])
 
             self.turn_directions.append('forward')
-            self._record_generation(prompt, response_tokens, "forward")
+            self._record_generation(prompt, response_tokens, raw_tokens, "forward", stop_reason)
             return self.tokenizer.decode(response_tokens)
 
         else:
@@ -459,6 +476,8 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
             # Generate - Engine.generate() is a generator that yields (token_column, token_masks)
             response_tokens = []
+            raw_tokens = []
+            stop_reason = "max_tokens"
             for token_column, token_masks in self.engine.generate(
                 prompt,
                 num_samples=1,
@@ -468,12 +487,15 @@ class BidirectionalChatEngine(DirectionalChatEngine):
             ):
                 # Extract token from batch dimension (num_samples=1, so take first)
                 tok = token_column[0]
+                raw_tokens.append(tok)
 
                 # Stop at assistant_end token
                 if tok == assistant_end:
                     if response_tokens:
+                        stop_reason = "assistant_end"
                         break
                     else:
+                        stop_reason = "assistant_end_first"
                         continue
 
                 response_tokens.append(tok)
@@ -485,7 +507,7 @@ class BidirectionalChatEngine(DirectionalChatEngine):
                                             assistant_start, assistant_end] +
                                            self.conversation_tokens[1:])
                 self.turn_directions.append('backward')
-                self._record_generation(prompt, [], "backward")
+                self._record_generation(prompt, [], raw_tokens, "backward", stop_reason)
                 return ""
 
             # Prepend to conversation
@@ -497,7 +519,7 @@ class BidirectionalChatEngine(DirectionalChatEngine):
 
             # Reverse for display
             display_tokens = reverse_tokens(response_tokens, keep_bos=False)
-            self._record_generation(prompt, response_tokens, "backward")
+            self._record_generation(prompt, response_tokens, raw_tokens, "backward", stop_reason)
             return self.tokenizer.decode(display_tokens)
 
     def get_conversation_display(self) -> list[dict]:

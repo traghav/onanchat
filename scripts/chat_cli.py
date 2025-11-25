@@ -116,7 +116,13 @@ while True:
             gen_dir = dbg.get("direction", direction)
             prompt_tokens = dbg.get("prompt_tokens", [])
             gen_tokens = dbg.get("generated_tokens", [])
-            print(f"[DEBUG] direction={gen_dir} prompt_len={len(prompt_tokens)} gen_len={len(gen_tokens)}")
+            raw_tokens = dbg.get("raw_tokens", [])
+            stop_reason = dbg.get("stop_reason", "unknown")
+            print(f"[DEBUG] direction={gen_dir} prompt_len={len(prompt_tokens)} gen_len={len(gen_tokens)} raw_len={len(raw_tokens)} stop={stop_reason}")
+            if raw_tokens:
+                raw_dec = tokenizer.decode(raw_tokens)
+                print(f"[DEBUG] raw first tokens: {raw_tokens[:8]}")
+                print(f"[DEBUG] raw decoded: {raw_dec[:200]}")
             if gen_tokens:
                 decoded_raw = tokenizer.decode(gen_tokens)
                 if gen_dir == "backward":
