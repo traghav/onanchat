@@ -237,7 +237,15 @@ while True:
 
     # save checkpoint at the end of the run (only on master process)
     if master_process and last_step and not dry_run:
-        output_dirname = f"d{depth}" # e.g. d12
+        # Create direction-aware model tag to avoid overwriting different direction models
+        if direction == "forward":
+            output_dirname = f"d{depth}_forward"
+        elif direction == "backward":
+            output_dirname = f"d{depth}_backward"
+        elif direction == "bidirectional":
+            output_dirname = f"d{depth}_bidirectional"
+        else:
+            output_dirname = f"d{depth}"
         checkpoint_dir = os.path.join(base_dir, "mid_checkpoints", output_dirname)
         save_checkpoint(
             checkpoint_dir,

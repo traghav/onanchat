@@ -283,8 +283,16 @@ for step in range(num_iterations):
 if master_process:
     base_dir = get_base_dir()
     depth = model.config.n_layer
-    model_tag = f"d{depth}" # base the model tag on the depth of the base model
-    checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", model_tag)
+    # Create direction-aware model tag to avoid overwriting different direction models
+    if direction == "forward":
+        output_model_tag = f"d{depth}_forward"
+    elif direction == "backward":
+        output_model_tag = f"d{depth}_backward"
+    elif direction == "bidirectional":
+        output_model_tag = f"d{depth}_bidirectional"
+    else:
+        output_model_tag = f"d{depth}"
+    checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", output_model_tag)
     model_config_kwargs = model.config.__dict__ # slightly naughty, abusing the simplicity of GPTConfig, TODO nicer
     save_checkpoint(
         checkpoint_dir,
@@ -299,7 +307,7 @@ if master_process:
             "model_config": model_config_kwargs,
         }
     )
-    print(f"✅ Saved model checkpoint to {checkpoint_dir}")
+    print(f"✅ Saved model checkpoint to {checkpoint_dir} (direction: {direction})")
 
 # Log to report
 from nanochat.report import get_report

@@ -454,3 +454,69 @@ results = evaluate_task_multi_direction(
 **Last Updated:** 2025-01-11
 **Status:** Design Complete, Implementation Pending
 **Contact:** Check git log for contributors
+- ## High-Level Concept
+This is a research extension to `nanochat` designed to study how Large Language Models (LLMs) learn when forced to predict text **Right-to-Left** (Backward) instead of the standard Left-to-Right (Forward), or when trained to do **both** (Bidirectional).
+
+The core hypothesis being tested is whether "backward" models learn different internal representations or if they can "fill in the blank" preceding a known ending (causal inference in reverse).
+
+### The Three Modes
+
+1.  **Forward (Baseline):** Standard GPT behavior. Input: `[BOS, A, B, C]`. Predicts `B` given `A`.
+2.  **Backward:** The model predicts tokens in reverse order. Input: `[BOS, C, B, A]`. The model sees the "end" of the sentence and tries to predict the beginning.
+3.  **Bidirectional:** The model learns both. It uses special tokens to switch context.
+    *   Input A: `[BOS, <|forward|>, A, B, C]`
+    *   Input B: `[BOS, <|backward|>, C, B, A]`
+
+### Implementation Details
+
+The implementation follows a **"Minimal Invasiveness"** design principle. The core Transformer (`gpt.py`) remains unchanged; the logic is handled during data loading and inference post-processing.
+
+#### 1. Data Pipeline (`nanochat/direction_dataloader.py`)
+This is where the actual "reversal" happens during training.
+*   **Forward:** Loads data normally.
+*   **Backward:** Reverses the token sequence of the document **except** for the `BOS` (Beginning of Sentence) token. The `BOS` token remains at index 0 so the model has a consistent starting point.
+*   **Bidirectional:** It alternates batches.
+    *   *Even batches:* Prepend `<|forward|>` token, keep order.
+    *   *Odd batches:* Prepend `<|backward|>` token, reverse order.
+
+#### 2. Inference & Chat (`nanochat/directional_chat_engine.py`)
+Since the model generates "backwards" tokens, the chat interface must handle the reversal so the human user sees normal text. This is implemented via the **Wrapper Pattern**:
+
+*   **`DirectionalChatEngine`:** The abstract base class.
+*   **`BackwardChatEngine`:**
+    1.  User types: "And they lived happily ever after."
+    2.  Engine reverses inputs: "after. ever happily lived they And"
+    3.  Model generates: "story. the is This" (predicting backwards)
+    4.  Engine reverses output for display: "This is the story."
+    5.  Final Display: "This is the story. And they lived happily ever after."
+*   **`BidirectionalChatEngine`:** Adds a state `current_direction`. It injects the `<|forward|>` or `<|backward|>` special token at the start of generation based on a toggle switch.
+
+#### 3. Tokenizer
+The tokenizer is modified (implied by `test_direction_dataloader.py`) to include two new special tokens:
+*   `<|forward|>`
+*   `<|backward|>`
+
+#### 4. Experiment Orchestration (`scripts/run_backward_experiment.py`)
+Because this is a research project involving many variations (base, mid-training, SFT), there is a specific runner script. It supports **Branching**:
+*   You can train a `base` backward model.
+*   Then branch off to do `mid` training (instruction tuning) on that specific checkpoint.
+*   The system uses `experiment_config.py` and `parent_link.json` to track which SFT run belongs to which Base run.
+
+#### 5. Evaluation (`nanochat/direction_eval.py`)
+To rigorously test this, the evaluation suite:
+*   Wraps standard tasks (like ARC, MMLU).
+*   For a backward model, it reverses the prompt of the exam question.
+*   It asks the model to predict the answer (which appears "before" the question in backward-time).
+*   It measures **Cross-Direction Transfer**: Can a model trained backward answer a forward question (by reversing its own thought process)?
+
+### Summary of Workflow
+
+1.  **Train:** You run `python -m scripts.run_backward_experiment --direction=backward`. The dataloader feeds reversed tokens to the standard GPT model.
+2.  **Save:** Metadata in the checkpoint saves `{"direction": "backward"}`.
+3.  **Chat:** When you load the model, the Factory (`create_chat_engine`) sees the metadata, instantiates `BackwardChatEngine`, and automatically handles the text flipping so you can interact with it naturally.
+
+This is a clever implementation because it requires almost zero changes to the complex mathematical core (`gpt.py`, `muon.py`, etc.), isolating the complexity in the data IO and the user interface layers.
+
+
+
+I want to update some of the models I have trained with proper readme/documentation on Huggign face, can you figure out how to, I will tell you which models

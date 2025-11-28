@@ -32,3 +32,5 @@ wordchess
 .jupyter-env/
 
 id_ed25519*
+
+wandb/

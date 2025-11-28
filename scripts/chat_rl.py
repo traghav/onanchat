@@ -31,6 +31,7 @@ from tasks.gsm8k import GSM8K
 # RL hyperparameters
 run = "dummy" # wandb run name
 source = "sft" # mid|sft
+model_tag = None # model tag to load (e.g., d20_backward, d20_forward, d20_bidirectional)
 dtype = "bfloat16"
 device_batch_size = 8 # no forward pass will go above this to not OOM
 examples_per_step = 16 # in total and across all ranks (note: examples, not samples/completions!)
@@ -64,7 +65,7 @@ use_dummy_wandb = run == "dummy" or not master_process
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-rl", name=run, config=user_config)
 
 # Init model and tokenizer
-model, tokenizer, meta = load_model(source, device, phase="eval")
+model, tokenizer, meta = load_model(source, device, phase="eval", model_tag=model_tag)
 
 # Auto-detect direction from checkpoint
 from nanochat.common import validate_direction, reverse_tokens
@@ -342,8 +343,16 @@ for step in range(num_steps):
     if master_process and ((step > 0 and step % save_every == 0) or step == num_steps - 1):
         base_dir = get_base_dir()
         depth = model.config.n_layer
-        model_tag = f"d{depth}" # base the model tag on the depth of the base model
-        checkpoint_dir = os.path.join(base_dir, "chatrl_checkpoints", model_tag)
+        # Create direction-aware model tag to avoid overwriting different direction models
+        if direction == "forward":
+            output_model_tag = f"d{depth}_forward"
+        elif direction == "backward":
+            output_model_tag = f"d{depth}_backward"
+        elif direction == "bidirectional":
+            output_model_tag = f"d{depth}_bidirectional"
+        else:
+            output_model_tag = f"d{depth}"
+        checkpoint_dir = os.path.join(base_dir, "chatrl_checkpoints", output_model_tag)
         model_config_kwargs = model.config.__dict__ # slightly naughty, abusing the simplicity of GPTConfig, TODO nicer
         save_checkpoint(
             checkpoint_dir,
@@ -351,10 +360,11 @@ for step in range(num_steps):
             model.state_dict(),
             None, # note: we don't bother to save the optimizer state
             {
+                "direction": direction,
                 "model_config": model_config_kwargs,
             }
         )
-        print(f"✅ Saved model checkpoint to {checkpoint_dir}")
+        print(f"✅ Saved model checkpoint to {checkpoint_dir} (direction: {direction})")
 
 # Log to report
 from nanochat.report import get_report
