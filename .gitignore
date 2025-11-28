@@ -34,3 +34,4 @@ wordchess
 id_ed25519*
 
 wandb/
+queue_train.log
